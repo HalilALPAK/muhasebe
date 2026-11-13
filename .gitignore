@@ -1,0 +1,26 @@
+# ---- Müşteri verileri ASLA depoya girmez ----
+*.db
+*.db-journal
+*.db-wal
+*.sqlite
+*.xlsx
+*.xls
+/*.pdf
+/*.png
+Yedekler/
+Ekstreler/
+ayarlar.json
+
+# ---- Derleme çıktıları (Releases sayfasından indirilir) ----
+*.exe
+*.apk
+build/
+dist/
+*.spec
+__pycache__/
+
+# ---- Sunucu ----
+sunucu/node_modules/
+sunucu/.wrangler/
+sunucu/.dev.vars
+sunucu/BAGLANTI_BILGILERI.txt

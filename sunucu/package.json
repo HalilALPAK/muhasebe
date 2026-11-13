@@ -1,0 +1,12 @@
+{
+  "name": "ogul-tarim-sunucu",
+  "private": true,
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "sema": "wrangler d1 execute ogul-tarim-muhasebe --remote --file schema.sql"
+  },
+  "devDependencies": {
+    "wrangler": "^3.90.0"
+  }
+}

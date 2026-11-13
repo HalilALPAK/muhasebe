@@ -1,0 +1,9 @@
+name = "ogul-tarim-muhasebe"
+main = "src/index.js"
+compatibility_date = "2024-11-01"
+
+# `npx wrangler d1 create ogul-tarim-muhasebe` komutunun verdiği database_id buraya yazılır.
+[[d1_databases]]
+binding = "DB"
+database_name = "ogul-tarim-muhasebe"
+database_id = "00000000-0000-0000-0000-000000000000"
