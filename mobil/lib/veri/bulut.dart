@@ -8,8 +8,8 @@ import 'veritabani.dart';
 
 const _api = 1;
 const _gonderim = 400; // bir istekte en fazla bu kadar kayıt gider
-/// Yayınlanan Cloudflare adresi; ayarlarda boşsa bu önerilir.
-const varsayilanSunucu = '';
+/// Alpotech sunucusu; ayarlarda boşsa bu önerilir.
+const varsayilanSunucu = 'https://muhasebe.l1bertech.com';
 const internetMesaji = 'Sunucuya ulaşılamadı. İnternet bağlantınızı kontrol edin.';
 
 class BulutHatasi implements Exception {

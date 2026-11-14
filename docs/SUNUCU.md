@@ -8,10 +8,16 @@ Bu belge Oğul Tarım Muhasebe'nin internet üzerinden eşitleme yapısını anl
  Windows programı (.exe)          Android uygulaması (.apk)
    yerel muhasebe.db                 yerel muhasebe.db
           │   HTTPS + anahtar             │
-          └──────────►  Cloudflare  ◄─────┘
-                    Workers (sunucu/src/index.js)
-                    D1 veritabanı (sunucu/schema.sql)
+          └──────────►  https://muhasebe.l1bertech.com  ◄─────┘
+                    Cloudflare Tunnel
+                          │
+                    Alpotech sunucusu (kendi Windows sunucumuz)
+                    Node.js + sunucu/src/index.js (aynı kod)
+                    yerel SQLite (sunucu/schema.sql aynı)
 ```
+
+- **Sunucu kendi sunucumuzda çalışıyor.** Adres: `https://muhasebe.l1bertech.com`. Program ve uygulamada bu adres hazır gelir; yalnızca anahtarın girilmesi gerekir.
+- Sunucu kodu (`sunucu/`) değişmedi. Aynı kod Cloudflare Workers + D1 üzerinde de çalışır; bu kurulum §6'da alternatif olarak anlatılıyor.
 
 - **Her cihaz kendi verisini yerelde tutar.** İnternet yokken program ve uygulama normal çalışır.
 - Yapılan her değişiklik yerelde **"gönderilecek"** diye işaretlenir. İnternet varken birkaç saniye içinde sunucuya gider. Ayrıca her dakika diğer cihazın yaptığı değişikliklere bakılır.
@@ -25,7 +31,9 @@ Bu belge Oğul Tarım Muhasebe'nin internet üzerinden eşitleme yapısını anl
   - **Kalıcı aktarım izi:** Aktarılan veya atlanan her kaydın içerik özeti `aktarim_izi` tablosunda saklanır. Aynı dosya tekrar taransa bile (dosya değişse ya da elle tarama yapılsa da) bir kez aktarılmış kayıt **bir daha aktarılmaz**; programda sonradan silinmiş olsa bile geri gelmez. Bu yüzden aynı veriler sunucuya tekrar tekrar gitmez ve hesaplar bozulmaz. Dosyaya sonradan eklenen yeni kayıtlar ise aktarılır.
   - Masaüstündeki dosya silinmez; isterseniz aktarımdan sonra kendiniz silebilir ya da saklayabilirsiniz. Bu iz tablosu yalnızca bilgisayarda tutulur, sunucuya gitmez.
 
-### Neden Cloudflare Workers + D1?
+### Alternatif: neden Cloudflare Workers + D1?
+
+Aşağıdaki tablo ilk plandaki Workers + D1 kurulumunun gerekçesidir. Şu an kullanılan kurulum kendi sunucumuzdur (yukarıda).
 
 | İhtiyaç | Karşılığı |
 |---|---|
@@ -160,6 +168,25 @@ curl -H "Authorization: Bearer <anahtar>" https://<adres>/v1/disa-aktar > yedek.
 
 ## 6. Kurulum (sunucuyu yayınlama)
 
+### Kullanılan kurulum: kendi sunucumuz
+
+Sunucu, Alpotech sunucusunda Node.js ile çalışır. D1 yerine yerel SQLite kullanılır ve aynı `schema.sql` uygulanır. İnternete Cloudflare Tunnel ile `https://muhasebe.l1bertech.com` adresinden açılır. Bu kurulumu sunucu tarafı yapar; laptopta yapılacak bir şey yoktur.
+
+Cihazlarda:
+1. Programda **Sunucu**, uygulamada ana ekrandaki **Sunucu** düğmesine basın. Adres `https://muhasebe.l1bertech.com` olarak hazır gelir.
+2. Size ayrıca verilen anahtarı girin, **Bağlantıyı Test Et** deyin, sonra **Kaydet ve Eşitle**.
+3. Yeni sunucu boş başlar. Cihaz bunu görünce (`sunucu_sifirlandi`) bütün kayıtlarını yeniden yükler. **Önce verisi en eksiksiz olan cihaz** (laptop) eşitlesin, `GET /v1/durum` sayıları kontrol edilsin, sonra telefon.
+
+Anahtar değişirse yalnızca cihazlardaki Sunucu ayarına yeni anahtar girilir; yeniden derlemek gerekmez.
+
+Kontrol:
+```bash
+curl https://muhasebe.l1bertech.com/                                   # {"uygulama":"ogul_tarim","api":1}
+curl -H "Authorization: Bearer <ANAHTAR>" https://muhasebe.l1bertech.com/v1/durum
+```
+
+### Alternatif: Cloudflare Workers + D1
+
 Gereken: ücretsiz bir Cloudflare hesabı ve Node.js.
 
 ```bash
@@ -182,7 +209,9 @@ npx wrangler dev --var API_ANAHTARI:deneme         # http://127.0.0.1:8787
 
 ## 7. Kapasite ve maliyet
 
-Cloudflare'in ücretsiz plan sınırları (güncel değerleri Cloudflare sayfasından kontrol edin):
+**Kullanılan kurulum (kendi sunucumuz):** Kullanım başına ücret ya da istek sınırı yoktur. Sınır, sunucunun diski ve bağlantısıdır. Bu işletmenin hacmi (aşağıda) bunun çok altında kalır. Sunucu kapalıyken cihazlar çalışmaya devam eder; değişiklikler sunucu açılınca gönderilir.
+
+**Alternatif (Workers + D1):** Cloudflare'in ücretsiz plan sınırları (güncel değerleri Cloudflare sayfasından kontrol edin):
 - Workers: günde 100.000 istek
 - D1: 5 GB depolama, günde 5 milyon satır okuma, günde 100.000 satır yazma
 

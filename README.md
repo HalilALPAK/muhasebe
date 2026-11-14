@@ -3,7 +3,7 @@
 <h1 align="center">Oğul Tarım Muhasebe</h1>
 
 <p align="center">Müşteri bazlı satış fişi, tahsilat, cari hesap, bilanço ve WhatsApp ekstresi.<br>
-Windows programı ve Android uygulaması internet üzerinden (Cloudflare) kendiliğinden eşitlenir.</p>
+Windows programı ve Android uygulaması internet üzerinden kendiliğinden eşitlenir.</p>
 
 ## İndir
 
@@ -17,7 +17,7 @@ Bütün sürümler: [Releases](https://github.com/HalilALPAK/muhasebe/releases)
 ### Kurulum
 - **Windows:** `.exe` dosyasını bir klasöre koyup çalıştırın. Kurulum gerekmez. Kayıtlar exe'nin yanındaki `muhasebe.db` dosyasında tutulur. Windows "kişisel bilgisayarınızı korudu" uyarısı verirse **Ek bilgi → Yine de çalıştır** seçin.
 - **Android:** `.apk` dosyasını telefona indirip açın. Gerekirse "bilinmeyen kaynaklardan yükleme" izni verin.
-- **Eşitleme:** İki cihazda da **Sunucu** ayarına aynı sunucu adresini ve anahtarı girin. Program ilk eşitlemede bilgisayardaki mevcut kayıtların hepsini sunucuya yükler.
+- **Eşitleme:** Sunucu adresi `https://muhasebe.l1bertech.com` (kendi sunucumuz). Program ve uygulamada hazır gelir; iki cihazda da **Sunucu** ayarına aynı anahtarı girin. Program ilk eşitlemede bilgisayardaki mevcut kayıtların hepsini sunucuya yükler.
 - **Eski veritabanları:** Program açılınca masaüstünü tarar. Bu programa ait başka bir `.db` bulursa (örneğin `Desktop\muhasebe.db`) kayıtlarını aktarmayı ve sunucuya göndermeyi önerir. Bulunan dosyaya dokunulmaz.
 
 ## Neler yapar
@@ -41,7 +41,7 @@ Bütün sürümler: [Releases](https://github.com/HalilALPAK/muhasebe/releases)
 |---|---|
 | [`masaustu/`](masaustu) | Windows programı (Python / Tkinter). `derle.bat` ile `.exe` yapılır. |
 | [`mobil/`](mobil) | Android uygulaması (Flutter). `flutter build apk --release` |
-| [`sunucu/`](sunucu) | Eşitleme sunucusu (Cloudflare Workers + D1) |
+| [`sunucu/`](sunucu) | Eşitleme sunucusu (kendi sunucumuzda Node.js + SQLite; Cloudflare Workers + D1'de de çalışır) |
 | [`docs/SUNUCU.md`](docs/SUNUCU.md) | **API, saklanan veriler, güvenlik, eşitleme kuralları, kurulum ve test raporu** |
 
 ## Gizlilik

@@ -1,4 +1,4 @@
-"""Cloudflare sunucusuyla eşitleme (laptop tarafı).
+"""Eşitleme sunucusuyla eşitleme (laptop tarafı).
 
 Her kayıt yerelde 'kirli' (gönderilecek) işaretiyle tutulur. Eşitlemede kirli kayıtlar parça parça
 sunucuya gider; cevapta sunucunun, bu cihazın son gördüğü sürümden sonra değişen kayıtları gelir
@@ -22,7 +22,7 @@ from muhasebe import FIRMA, KIRMIZI, YESIL, KOYU_TURUNCU
 API = 1
 GONDERIM = 400          # bir istekte en fazla bu kadar kayıt gönderilir
 OTOMATIK_SURE = 60_000  # ms: değişiklik olmasa da bu aralıkla diğer cihazların değişikliklerine bakılır
-VARSAYILAN_SUNUCU = ""  # yayınlanan Cloudflare adresi; ayarlarda boşsa bu önerilir
+VARSAYILAN_SUNUCU = "https://muhasebe.l1bertech.com"  # Alpotech sunucusu; ayarlarda boşsa bu önerilir
 
 
 class BulutHatasi(Exception):
@@ -321,7 +321,7 @@ class SunucuAyarPenceresi(tk.Toplevel):
         self.grab_set()
         f = ttk.Frame(self, padding=16)
         f.pack(fill="both")
-        ttk.Label(f, text="Sunucu (Cloudflare) Ayarları", style="Baslik.TLabel").grid(row=0, column=0, columnspan=2, sticky="w")
+        ttk.Label(f, text="Sunucu Ayarları", style="Baslik.TLabel").grid(row=0, column=0, columnspan=2, sticky="w")
         ttk.Label(f, wraplength=470, justify="left", foreground="#6A5A4A", text=(
             "Laptop ve telefon aynı sunucu adresini ve anahtarı kullanınca kayıtlar internet üzerinden "
             "otomatik eşitlenir. İnternet yokken çalışmaya devam edersiniz; değişiklikler bağlantı gelince gönderilir.\n"
