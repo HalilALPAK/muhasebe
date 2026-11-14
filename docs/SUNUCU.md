@@ -17,6 +17,11 @@ Bu belge Oğul Tarım Muhasebe'nin internet üzerinden eşitleme yapısını anl
 - Yapılan her değişiklik yerelde **"gönderilecek"** diye işaretlenir. İnternet varken birkaç saniye içinde sunucuya gider. Ayrıca her dakika diğer cihazın yaptığı değişikliklere bakılır.
 - **Birleştirme kurallarının tamamı sunucudadır.** Cihazlar sunucunun verdiği sonucu uygular, bu yüzden iki cihaz birbirinden ayrışamaz.
 - Mevcut `muhasebe.db` dosyasındaki bütün kayıtlar **ilk eşitlemede sunucuya yüklenir.** Geçişten önce `Yedekler` klasörüne otomatik yedek alınır.
+- **Masaüstü taraması:** Program açılınca masaüstünü (ve OneDrive masaüstünü) 3 klasör derinliğe kadar tarar. Bu programa ait başka bir veritabanı bulursa (örneğin exe'nin eskiden masaüstünde çalıştırılmasıyla oluşan `Desktop\muhasebe.db`) kayıtları programa aktarmayı önerir. Onaylanırsa kayıtlar eklenir ve sunucuya gönderilir.
+  - Bulunan dosyaya dokunulmaz; geçici bir kopyası okunur.
+  - Aynı isimli müşteriler birleşir. Aynı işlem (müşteri, tarih, tutar ve ürün satırları aynıysa) ikinci kez eklenmez.
+  - Fiş numarası çakışırsa yalnızca çakışan fiş yeni numara alır.
+  - Bir kez sorulan dosya değişmedikçe tekrar sorulmaz. Elle tarama için **Sunucu → Masaüstünde Veritabanı Ara** düğmesi var.
 
 ### Neden Cloudflare Workers + D1?
 
@@ -205,6 +210,12 @@ Testler yerel Cloudflare ortamında (`wrangler dev`, gerçek Workers çalışma 
 - Silinen müşteriye başka cihazda girilen satış kaybolmadı.
 - Sunucu sıfırlanınca cihaz bütün kayıtlarını yeniden yükledi.
 - Yanlış anahtar ve internet yok durumunda doğru mesajlar çıktı.
+
+**Masaüstü taraması, 13 senaryo, hepsi geçti:**
+- Gerçek masaüstündeki iki veritabanının kopyaları ve Excel verili eski bir veritabanı bulundu. Programın kendi veritabanı, `Yedekler` klasörü, çok derindeki dosyalar ve bu programa ait olmayan SQLite dosyaları atlandı.
+- 221 işlem aktarıldı. Yalnızca çakışan tek fiş yeni numara aldı; diğer fişlerin numarası korundu.
+- İkinci kez aktarımda hiçbir şey çiftlenmedi. Aynı gün aynı tutardaki iki gerçek satış ikisi de korundu.
+- Aktarılan kayıtlar sunucuya gitti; ikinci bir cihaz aynı bakiyeyi aldı. Gerçek dosyaların içeriği değişmedi (dosya özeti karşılaştırıldı).
 
 **Telefon istemcisi (Dart/Flutter), 6 test, hepsi geçti:**
 - Eski sürüm telefon veritabanı yükseltildi ve kayıtları gönderilecek olarak işaretlendi.

@@ -18,6 +18,7 @@ Bütün sürümler: [Releases](https://github.com/HalilALPAK/muhasebe/releases)
 - **Windows:** `.exe` dosyasını bir klasöre koyup çalıştırın. Kurulum gerekmez. Kayıtlar exe'nin yanındaki `muhasebe.db` dosyasında tutulur. Windows "kişisel bilgisayarınızı korudu" uyarısı verirse **Ek bilgi → Yine de çalıştır** seçin.
 - **Android:** `.apk` dosyasını telefona indirip açın. Gerekirse "bilinmeyen kaynaklardan yükleme" izni verin.
 - **Eşitleme:** İki cihazda da **Sunucu** ayarına aynı sunucu adresini ve anahtarı girin. Program ilk eşitlemede bilgisayardaki mevcut kayıtların hepsini sunucuya yükler.
+- **Eski veritabanları:** Program açılınca masaüstünü tarar. Bu programa ait başka bir `.db` bulursa (örneğin `Desktop\muhasebe.db`) kayıtlarını aktarmayı ve sunucuya göndermeyi önerir. Bulunan dosyaya dokunulmaz.
 
 ## Neler yapar
 

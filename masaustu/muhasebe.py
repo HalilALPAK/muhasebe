@@ -1767,6 +1767,7 @@ class Uygulama(tk.Tk):
             s.grid(row=0, column=0, sticky="nsew")
         self.sayfa_goster("ana")
         self.after(60_000, self.yil_kontrol)
+        self.after(2500, lambda: __import__("db_tarama").tara_ve_sor(self))   # masaüstündeki eski veritabanları
 
     def yil_kontrol(self):
         """Program açıkken yeni yıla girilirse (31 Aralık → 1 Ocak) çalışma yılını kendiliğinden ilerletir."""

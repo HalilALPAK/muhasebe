@@ -337,8 +337,14 @@ class SunucuAyarPenceresi(tk.Toplevel):
         self.durum.grid(row=5, column=0, columnspan=2, sticky="w", pady=(10, 0))
         alt = ttk.Frame(f)
         alt.grid(row=6, column=0, columnspan=2, sticky="e", pady=(14, 0))
+        ttk.Button(alt, text="Masaüstünde Veritabanı Ara", command=self.db_ara).pack(side="left", padx=(0, 8))
         ttk.Button(alt, text="Bağlantıyı Test Et", command=self.test).pack(side="left")
         ttk.Button(alt, text="Kaydet ve Eşitle", style="Vurgu.TButton", command=self.kaydet).pack(side="left", padx=(8, 0))
+
+    def db_ara(self):
+        import db_tarama
+        self.destroy()
+        db_tarama.tara_ve_sor(self.uyg, elle=True)
 
     def _degerler(self):
         url = self.url.get().strip().rstrip("/")
