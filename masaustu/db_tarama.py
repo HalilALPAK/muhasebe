@@ -4,10 +4,13 @@ sonraki eşitlemede sunucuya da gider.
 
 Bulunan dosyaya dokunulmaz: geçici bir kopyası açılıp okunur.
 """
+import hashlib
+import json
 import os
 import shutil
 import sqlite3
 import tempfile
+from collections import Counter
 
 from muhasebe import DB, kucuk
 
@@ -97,24 +100,49 @@ def ice_aktar(hedef, kaynak_yol):
     kaynak = DB(kopya)                         # eski yapıdaysa kopya yeni yapıya geçer (uuid eklenir)
     con = hedef.con
     try:
+        # Kalıcı iz: bir kez aktarılan veya atlanan kayıt programda sonradan silinse bile bir daha
+        # aktarılmaz (aynı dosya tekrar tarandığında silinen kayıtlar geri gelip hesabı bozmasın).
+        # Aynı içerikli kayıtlar sırayla numaralanır (#1, #2) ki aynı gün aynı tutardaki iki gerçek satış korunsun.
+        con.execute("CREATE TABLE IF NOT EXISTS aktarim_izi (imza TEXT PRIMARY KEY)")
+        sira = Counter()
+
+        def anahtar(tur, *icerik):
+            ozet = hashlib.sha1(json.dumps(icerik, ensure_ascii=False, default=str).encode("utf-8")).hexdigest()
+            sira[(tur, ozet)] += 1
+            return f"{tur}:{ozet}#{sira[(tur, ozet)]}"
+
+        izli = lambda a: con.execute("SELECT 1 FROM aktarim_izi WHERE imza = ?", (a,)).fetchone() is not None
+        iz = lambda a: con.execute("INSERT OR IGNORE INTO aktarim_izi (imza) VALUES (?)", (a,))
+
+        kaynak_musteri = {kid: (uuid, ad, tel, notlar, g) for kid, uuid, ad, tel, notlar, g in kaynak.sorgu(
+            "SELECT id, uuid, ad, COALESCE(telefon, ''), COALESCE(notlar, ''), guncelleme FROM musteri")}
         harita = {}
-        for kid, uuid, ad, tel, notlar, g in kaynak.sorgu(
-                "SELECT id, uuid, ad, COALESCE(telefon, ''), COALESCE(notlar, ''), guncelleme FROM musteri"):
+
+        def musteri_id(kid):
+            """Kaynak müşterinin hedefteki karşılığı; yoksa aynı isimliyle birleştirir ya da ekler."""
+            if kid in harita:
+                return harita[kid]
+            uuid, ad, tel, notlar, g = kaynak_musteri[kid]
             r = con.execute("SELECT id FROM musteri WHERE uuid = ?", (uuid,)).fetchone()
-            if r:
-                harita[kid] = r[0]
-                continue
-            mevcut = hedef.musteri_bul(ad)
+            mevcut = r[0] if r else hedef.musteri_bul(ad)
             if mevcut:
-                harita[kid] = mevcut
-                _, mad, mtel, mnot = hedef.musteri(mevcut)
+                _, _, mtel, mnot = hedef.musteri(mevcut)
                 if (tel and not mtel) or (notlar and not mnot):
                     con.execute("UPDATE musteri SET telefon = ?, notlar = ? WHERE id = ?", (mtel or tel, mnot or notlar, mevcut))
-                rapor["birlesen"] += 1
+                if not r:
+                    rapor["birlesen"] += 1
             else:
-                harita[kid] = con.execute("INSERT INTO musteri (ad, telefon, notlar, uuid, guncelleme) VALUES (?, ?, ?, ?, ?)",
-                                          (ad, tel, notlar, uuid, g)).lastrowid
+                mevcut = con.execute("INSERT INTO musteri (ad, telefon, notlar, uuid, guncelleme) VALUES (?, ?, ?, ?, ?)",
+                                     (ad, tel, notlar, uuid, g)).lastrowid
                 rapor["musteri"] += 1
+            harita[kid] = mevcut
+            return mevcut
+
+        for kid, (_, ad, *_) in kaynak_musteri.items():
+            a = anahtar("m", kucuk(ad).strip())
+            if not izli(a):                    # daha önce aktarılmış (belki sonra silinmiş) müşteri yeniden açılmaz
+                musteri_id(kid)
+                iz(a)
 
         def imza(c, iid, tur, tarih, tutar, ac):
             """Aynı işlemi tanımak için: eski yapıdaki dosyalarda kimlik her açılışta yeniden üretildiği
@@ -136,14 +164,21 @@ def ice_aktar(hedef, kaynak_yol):
 
         for kid, uuid, mid, tur, tarih, tutar, ac, fis, g in kaynak.sorgu(
                 "SELECT id, uuid, musteri_id, tur, tarih, tutar, COALESCE(aciklama, ''), fis_no, guncelleme FROM islem ORDER BY id"):
-            hedef_mid = harita.get(mid)
-            if hedef_mid is None or con.execute("SELECT 1 FROM islem WHERE uuid = ?", (uuid,)).fetchone():
+            if mid not in kaynak_musteri:
                 rapor["atlanan"] += 1
                 continue
-            eslesen = mevcut.get((hedef_mid,) + imza(kaynak.con, kid, tur, tarih, tutar, ac))
-            if eslesen:
-                eslesen.pop()                  # aynı işlem daha önce aktarılmış
+            icerik = imza(kaynak.con, kid, tur, tarih, tutar, ac)
+            a = anahtar("i", kucuk(kaynak_musteri[mid][1]).strip(), *icerik)
+            if izli(a):
+                rapor["atlanan"] += 1          # daha önce aktarılmış (sonra silinmiş olsa bile)
+                continue
+            hedef_mid = musteri_id(mid)
+            eslesen = mevcut.get((hedef_mid,) + icerik)
+            if con.execute("SELECT 1 FROM islem WHERE uuid = ?", (uuid,)).fetchone() or eslesen:
+                if eslesen:
+                    eslesen.pop()              # aynı işlem zaten var
                 rapor["atlanan"] += 1
+                iz(a)
                 continue
             if tur == "SATIŞ" and (fis is None or con.execute("SELECT 1 FROM islem WHERE fis_no = ?", (fis,)).fetchone()):
                 if fis is not None:
@@ -154,10 +189,15 @@ def ice_aktar(hedef, kaynak_yol):
                               (hedef_mid, tur, tarih, tutar, ac, fis if tur == "SATIŞ" else None, uuid, g)).lastrowid
             con.executemany("INSERT INTO kalem (islem_id, urun, adet, birim_fiyat) VALUES (?, ?, ?, ?)",
                             kaynak.sorgu("SELECT ?, urun, adet, birim_fiyat FROM kalem WHERE islem_id = ? ORDER BY id", iid, kid))
+            iz(a)
             rapor["islem"] += 1
 
         for uuid, tarih, kat, tutar, ac, g in kaynak.sorgu(
-                "SELECT uuid, tarih, COALESCE(kategori, ''), tutar, COALESCE(aciklama, ''), guncelleme FROM gider"):
+                "SELECT uuid, tarih, COALESCE(kategori, ''), tutar, COALESCE(aciklama, ''), guncelleme FROM gider ORDER BY id"):
+            a = anahtar("g", tarih, kat, round(tutar, 2), ac)
+            if izli(a):
+                continue
+            iz(a)
             if con.execute("SELECT 1 FROM gider WHERE uuid = ? OR (tarih = ? AND kategori = ? AND ABS(tutar - ?) < 0.01)",
                            (uuid, tarih, kat, tutar)).fetchone():
                 continue

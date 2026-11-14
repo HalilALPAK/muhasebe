@@ -22,6 +22,8 @@ Bu belge Oğul Tarım Muhasebe'nin internet üzerinden eşitleme yapısını anl
   - Aynı isimli müşteriler birleşir. Aynı işlem (müşteri, tarih, tutar ve ürün satırları aynıysa) ikinci kez eklenmez.
   - Fiş numarası çakışırsa yalnızca çakışan fiş yeni numara alır.
   - Bir kez sorulan dosya değişmedikçe tekrar sorulmaz. Elle tarama için **Sunucu → Masaüstünde Veritabanı Ara** düğmesi var.
+  - **Kalıcı aktarım izi:** Aktarılan veya atlanan her kaydın içerik özeti `aktarim_izi` tablosunda saklanır. Aynı dosya tekrar taransa bile (dosya değişse ya da elle tarama yapılsa da) bir kez aktarılmış kayıt **bir daha aktarılmaz**; programda sonradan silinmiş olsa bile geri gelmez. Bu yüzden aynı veriler sunucuya tekrar tekrar gitmez ve hesaplar bozulmaz. Dosyaya sonradan eklenen yeni kayıtlar ise aktarılır.
+  - Masaüstündeki dosya silinmez; isterseniz aktarımdan sonra kendiniz silebilir ya da saklayabilirsiniz. Bu iz tablosu yalnızca bilgisayarda tutulur, sunucuya gitmez.
 
 ### Neden Cloudflare Workers + D1?
 
@@ -211,10 +213,12 @@ Testler yerel Cloudflare ortamında (`wrangler dev`, gerçek Workers çalışma 
 - Sunucu sıfırlanınca cihaz bütün kayıtlarını yeniden yükledi.
 - Yanlış anahtar ve internet yok durumunda doğru mesajlar çıktı.
 
-**Masaüstü taraması, 13 senaryo, hepsi geçti:**
+**Masaüstü taraması, 15 senaryo, hepsi geçti:**
 - Gerçek masaüstündeki iki veritabanının kopyaları ve Excel verili eski bir veritabanı bulundu. Programın kendi veritabanı, `Yedekler` klasörü, çok derindeki dosyalar ve bu programa ait olmayan SQLite dosyaları atlandı.
 - 221 işlem aktarıldı. Yalnızca çakışan tek fiş yeni numara aldı; diğer fişlerin numarası korundu.
 - İkinci kez aktarımda hiçbir şey çiftlenmedi. Aynı gün aynı tutardaki iki gerçek satış ikisi de korundu.
+- Aktarılan bir işlem ve bir müşteri programda silindi, dosya yeniden tarandı: silinenler geri gelmedi.
+- Dosyaya eski programla yeni bir satış eklendi: yalnızca o satış aktarıldı.
 - Aktarılan kayıtlar sunucuya gitti; ikinci bir cihaz aynı bakiyeyi aldı. Gerçek dosyaların içeriği değişmedi (dosya özeti karşılaştırıldı).
 
 **Telefon istemcisi (Dart/Flutter), 6 test, hepsi geçti:**
