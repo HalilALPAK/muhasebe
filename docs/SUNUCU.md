@@ -79,6 +79,8 @@ Cihaz adı yalnızca kullanıcının ayarlarda yazdığı addır.
 - **Depo herkese açıktır** ama içinde müşteri verisi, `.db`, Excel, PDF ve anahtar **yoktur**; bunlar `.gitignore` ile dışarıda tutulur.
 - **Girdi doğrulama:** Sunucu gelen her alanı kontrol eder (tarih biçimi, sayı, metin uzunluğu, işlem türü). Bozuk bir istekte hiçbir şey yazılmaz: bir istek ya tamamen işlenir ya hiç işlenmez.
 
+- **Sertifika doğrulama (Windows):** Birçok Windows'ta "Ara Sertifikalar" deposunda süresi 15.09.2025'te dolmuş eski bir `ISRG Root X2 ← ISRG Root X1` sertifikası durur. Python bu depoyu kullanınca Let's Encrypt zincirini onun üzerinden kurup "certificate has expired" hatası veriyordu (tarayıcı ve curl etkilenmez). Program bu yüzden önce exe'ye gömülü `certifi` kök listesini, olmazsa Windows deposunu kullanır. Doğrulama hiçbir zaman kapatılmaz.
+
 ## 4. API
 
 Temel adres, Cloudflare'in verdiği adrestir (`https://ogul-tarim-muhasebe.<hesap>.workers.dev`). `/` dışındaki her istek `Authorization: Bearer <anahtar>` başlığı ister.

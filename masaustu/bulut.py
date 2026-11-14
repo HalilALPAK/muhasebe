@@ -10,6 +10,7 @@ import os
 import platform
 import queue
 import sqlite3
+import ssl
 import threading
 import tkinter as tk
 import urllib.error
@@ -29,14 +30,48 @@ class BulutHatasi(Exception):
     pass
 
 
+def _ssl_baglamlari():
+    """Önce certifi kök listesi, sonra Windows sertifika deposu.
+
+    Birçok Windows'ta 'Ara Sertifikalar' deposunda süresi 2025'te dolmuş eski bir
+    'ISRG Root X2 <- X1' sertifikası durur; Python bu depoyu yüklediğinde zinciri onun
+    üzerinden kurup 'certificate has expired' hatası verir (tarayıcı ve curl etkilenmez).
+    certifi'nin kendi kök listesiyle bu sorun olmaz; certifi yoksa ya da zinciri tanımıyorsa
+    Windows deposu denenir."""
+    sonuc = []
+    try:
+        import certifi
+        sonuc.append(ssl.create_default_context(cafile=certifi.where()))
+    except (ImportError, OSError, ssl.SSLError):
+        pass
+    sonuc.append(ssl.create_default_context())
+    return sonuc
+
+
+_SSL = None
+
+
+def _ssl_hatasi_mi(e):
+    neden = getattr(e, "reason", e)
+    return isinstance(neden, ssl.SSLCertVerificationError) or isinstance(e, ssl.SSLCertVerificationError)
+
+
 def istek(url, anahtar, yol, govde=None, zaman_asimi=60):
     veri = json.dumps(govde, ensure_ascii=False).encode("utf-8") if govde is not None else None
     r = urllib.request.Request(url.rstrip("/") + yol, data=veri, method="POST" if veri else "GET", headers={
         "Authorization": f"Bearer {anahtar}", "Content-Type": "application/json; charset=utf-8",
         "User-Agent": "OgulTarimMuhasebe/1"})
+    global _SSL
+    if _SSL is None:
+        _SSL = _ssl_baglamlari()
     try:
-        with urllib.request.urlopen(r, timeout=zaman_asimi) as y:
-            return json.loads(y.read().decode("utf-8"))
+        for i, baglam in enumerate(_SSL):
+            try:
+                with urllib.request.urlopen(r, timeout=zaman_asimi, context=baglam) as y:
+                    return json.loads(y.read().decode("utf-8"))
+            except (urllib.error.URLError, ssl.SSLError) as e:
+                if isinstance(e, urllib.error.HTTPError) or not _ssl_hatasi_mi(e) or i == len(_SSL) - 1:
+                    raise
     except urllib.error.HTTPError as e:
         try:
             mesaj = json.loads(e.read().decode("utf-8")).get("hata")
@@ -46,6 +81,8 @@ def istek(url, anahtar, yol, govde=None, zaman_asimi=60):
             raise BulutHatasi("Sunucu anahtarı hatalı. Sunucu Ayarları'ndan kontrol edin.") from e
         raise BulutHatasi(mesaj or f"Sunucu hatası ({e.code})") from e
     except (urllib.error.URLError, TimeoutError, OSError) as e:
+        if _ssl_hatasi_mi(e):
+            raise BulutHatasi("Sunucunun güvenlik sertifikası doğrulanamadı. Bilgisayarın tarih ve saatini kontrol edin.") from e
         raise BulutHatasi("Sunucuya ulaşılamadı. İnternet bağlantınızı kontrol edin.") from e
     except ValueError as e:
         raise BulutHatasi("Sunucudan geçersiz cevap geldi. Sunucu adresini kontrol edin.") from e
