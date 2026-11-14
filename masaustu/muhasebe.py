@@ -1629,6 +1629,11 @@ class FisEkrani(ttk.Frame):
         self.yil_cb["values"] = self.db.yillar()
         self.detay.yenile()
         self.son.yenile()
+        # satış kaydından sonra başka müşteri gösterildiyse arama kutusu da onun adını alsın
+        if self.detay.mid is not None and self.detay.mid != getattr(self, "_gosterilen", None):
+            self._gosterilen = self.detay.mid
+            self.ara.set(self.db.musteri(self.detay.mid)[1])
+            self.giris.gizle()
 
 
 class CariEkrani(ttk.Frame):

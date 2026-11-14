@@ -197,23 +197,29 @@ Future<Uint8List> ekstrePdf(EkstreVeri v) async {
 }
 
 /// PDF sayfalarını PNG yapar; alttaki boşluğu kırpar (WhatsApp'ta okunaklı olsun diye).
+/// Android sayfayı saydam zeminle çizer: görüntü beyaz zemine oturtulur, yoksa soluk/bozuk görünür.
 Future<List<Uint8List>> ekstrePng(Uint8List pdf) async {
   final sonuc = <Uint8List>[];
   await for (final s in Printing.raster(pdf, dpi: 150)) {
-    final resim = img.Image.fromBytes(width: s.width, height: s.height, bytes: s.pixels.buffer, numChannels: 4, order: img.ChannelOrder.rgba);
-    var alt = s.height - 1;
+    final sayfa = img.decodePng(await s.toPng())!;
+    final resim = img.Image(width: sayfa.width, height: sayfa.height, numChannels: 3);
+    img.fill(resim, color: img.ColorRgb8(255, 255, 255));
+    img.compositeImage(resim, sayfa);
     bool bos(int y) {
-      for (var x = 0; x < s.width; x += 3) {
-        if (resim.getPixel(x, y).r < 250) return false;
+      for (var x = 0; x < resim.width; x += 3) {
+        final p = resim.getPixel(x, y);
+        if (p.r < 250 || p.g < 250 || p.b < 250) return false;
       }
       return true;
     }
 
+    // altbilgideki sayfa numarası hariç içeriğin bittiği yer: görsel orada kesilir (WhatsApp'ta okunaklı olsun)
+    var alt = resim.height - 1 - (resim.height * 0.06).round();
     while (alt > 0 && bos(alt)) {
       alt--;
     }
-    final yukseklik = (alt + 45).clamp(1, s.height);
-    sonuc.add(img.encodePng(img.copyCrop(resim, x: 0, y: 0, width: s.width, height: yukseklik), level: 4));
+    final yukseklik = (alt + 45).clamp(1, resim.height);
+    sonuc.add(img.encodePng(img.copyCrop(resim, x: 0, y: 0, width: resim.width, height: yukseklik), level: 4));
   }
   return sonuc;
 }

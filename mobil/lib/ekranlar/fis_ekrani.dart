@@ -66,6 +66,7 @@ class _FisEkraniState extends State<FisEkrani> {
     final s = await satisAc(context, musteriUuid: _secili);
     if (s != null) {
       _secili = s.$1;
+      _ara.text = (await vt.musteri(s.$1))?.ad ?? ''; // arama kutusu gösterilen müşteriyle aynı olsun
       _yukle();
     }
   }

@@ -4,4 +4,6 @@
          to allow setting breakpoints, to provide hot reload, etc.
     -->
     <uses-permission android:name="android.permission.INTERNET"/>
+    <!-- Sadece test sürümü: USB üzerinden bilgisayardaki yerel test sunucusuna (127.0.0.1) bağlanabilsin -->
+    <application android:networkSecurityConfig="@xml/test_ag_ayari"/>
 </manifest>
