@@ -336,7 +336,8 @@ class _HesapKartiState extends State<HesapKarti> {
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       Text(h.musteri.ad, style: const TextStyle(fontSize: 19, fontWeight: FontWeight.bold, color: Color(0xFF3A2A1A))),
       if (h.musteri.telefon.isNotEmpty || h.musteri.notlar.isNotEmpty)
-        Text([if (h.musteri.telefon.isNotEmpty) 'Tel: ${h.musteri.telefon}', h.musteri.notlar].join('   '), style: const TextStyle(fontSize: 13)),
+        Text([if (h.musteri.telefon.isNotEmpty) 'Tel: ${h.musteri.telefon}', if (h.musteri.notlar.isNotEmpty) h.musteri.notlar].join('   '),
+            style: const TextStyle(fontSize: 13)),
       const SizedBox(height: 8),
       Row(children: [for (var i = 0; i < kutular.length; i++) ...[if (i > 0) const SizedBox(width: 5), kutular[i]]]),
       const SizedBox(height: 8),
