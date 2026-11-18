@@ -4,7 +4,7 @@
 // Sonunda adres ve anahtar ekrana ve BAGLANTI_BILGILERI.txt dosyasına yazılır (depoya girmez).
 import { spawnSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
@@ -49,8 +49,19 @@ if (!id || /^0{8}-/.test(id)) {
 }
 console.log(`    database_id = ${id}`);
 
-console.log('3/6 Tablolar oluşturuluyor...');
+console.log('3/6 Tablolar oluşturuluyor ve göçler uygulanıyor...');
 if (calistir(['d1', 'execute', AD, '--remote', '--file', 'schema.sql', '-y']).kod !== 0) dur('Şema yüklenemedi.');
+// göçler (goc/NNN_*.sql) sırayla ve bir kez: uygulanan son numara meta tablosunda 'goc' satırında
+const gocCikti = calistir(['d1', 'execute', AD, '--remote', '--json', '--command', "SELECT deger FROM meta WHERE anahtar = 'goc'"], { yakala: true }).cikti;
+let uygulanan = 0;
+try {
+  uygulanan = JSON.parse(gocCikti.slice(gocCikti.indexOf('[')))[0]?.results?.[0]?.deger ?? 0;
+} catch { dur(`Göç durumu okunamadı:\n${gocCikti}`); }
+for (const dosya of readdirSync('goc').filter((d) => /^\d{3}_.+\.sql$/.test(d)).sort()) {
+  if (Number(dosya.slice(0, 3)) <= uygulanan) continue;
+  console.log(`    göç: ${dosya}`);
+  if (calistir(['d1', 'execute', AD, '--remote', '--file', join('goc', dosya), '-y']).kod !== 0) dur(`Göç uygulanamadı: ${dosya}`);
+}
 
 console.log('4/6 Sunucu yayınlanıyor...');
 if (calistir(['deploy']).kod !== 0) dur('Yayınlanamadı.');

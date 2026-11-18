@@ -53,12 +53,13 @@ Sunucuda yalnızca programda girilen muhasebe kayıtları durur:
 | `gider` | uuid, tarih, kategori, tutar, aciklama | Giderler |
 | `esleme` | eski, yeni | İki cihazda aynı isimle açılıp birleştirilen müşteriler |
 | `kayit` | zaman, cihaz, gelen, rapor | Eşitleme günlüğü: hangi cihaz (örn. `LAPTOP`, `telefon`), ne zaman, kaç kayıt gönderdi |
-| `meta` | surum | Eşitleme sayacı |
+| `meta` | surum, goc | Eşitleme sayacı ve uygulanan son göç numarası |
 
 Her kayıtta ayrıca şu teknik alanlar bulunur:
 - `guncelleme`: son değişikliğin zamanı
 - `silindi`: silinen kayıtlar bu işaretle saklanır, böylece eski bir kopyadan geri gelmez
 - `surum`: cihazların "bu sürümden sonrasını ver" diye sorduğu sayaç
+- `ek`: uygulamaya sonradan eklenen alanlar (JSON). Ayrıntı için bkz. §10.
 
 **Sunucuda olmayanlar:**
 - Ekstre görselleri ve PDF'leri (cihazda üretilir)
@@ -262,3 +263,52 @@ Testler yerel Cloudflare ortamında (`wrangler dev`, gerçek Workers çalışma 
 **Henüz denenmeyenler:**
 - Uygulamanın gerçek bir Android telefonda çalışması. Geliştirme bilgisayarında disk dolu olduğu için emülatör açılamadı.
 - Gerçek Cloudflare hesabında, ücretsiz plan sınırları altında yük testi.
+
+## 10. Veritabanı göçleri ve yeni alan ekleme
+
+### Göçler
+- `schema.sql` temel şemadır (sürüm 0) ve **değiştirilmez**. Her şema değişikliği `sunucu/goc/NNN_aciklama.sql` dosyasıdır.
+- Uygulanmış bir göç dosyası değiştirilmez ve silinmez. Düzeltme gerekirse yeni numaralı bir göç yazılır.
+- Her göç, sonunda `meta` tablosuna kendi numarasını yazar (`INSERT OR REPLACE INTO meta VALUES ('goc', N)`).
+- **Kendi sunucumuzda** sunucu açılırken `goc/` dosyalarını sırayla ve bir kez uygular. Uygulamadan önce yedek alır; hata olursa hiçbir şey değişmez ve sunucu başlamaz. Uygulanan göç `PRAGMA user_version` içinde tutulur.
+- **Cloudflare Workers'ta** `yayinla.bat`, `meta.goc` değerine bakıp henüz uygulanmamış göçleri sırayla uygular.
+
+| Göç | Ne yapar |
+|---|---|
+| `001_ek_alanlar.sql` | `musteri`, `islem` ve `gider` tablolarına `ek` (JSON) sütunu ekler; güncelleme tetikleyicilerine `ek`i ekler |
+
+### Yeni alan eklemek: çoğu zaman sunucu değişmez
+
+Göç 001'den sonra sunucu, tanımadığı alanları atmaz; kaydın `ek` sütununda saklar ve cihazlara kaydın içinde **düz alan** olarak geri verir. Bu yüzden müşteriye "adres", işleme "ödeme şekli" ya da gidere "fatura no" gibi **basit bir alan eklemek için yalnızca uygulamalar değişir**: sunucu kodu, göç ve yeniden yayın gerekmez.
+
+| Durum | Sunucunun davranışı |
+|---|---|
+| Alan gönderildi | Saklanır, diğer cihazlara gider |
+| Alan **hiç gönderilmedi** (eski sürüm uygulama) | Mevcut değer **korunur**. Eski sürümle yapılan düzenleme yeni alanı boşaltamaz. |
+| Alan `null` gönderildi | Alan silinir |
+| Kayıt daha eski tarihli (son değişiklik kazanır) | Ek alanlar da değişmez |
+| Aynı isimli müşteriler birleşti | Ek alanlar birleşir, kalan müşterideki değerler önceliklidir |
+
+**Kurallar:**
+- Alan adı küçük harfle başlar; yalnızca `a-z`, `0-9` ve `_` içerir, en fazla 40 karakterdir (`adres`, `vergi_no`).
+- Değer metin, sayı, doğru/yanlış, liste ya da nesne olabilir. Bir kaydın ek alanları toplam 8.000 karakteri geçemez.
+- Temel alanlar (`ad`, `tutar`, `fis_no`, ...) ile `uuid`, `guncelleme`, `silindi`, `surum` ve `ek` adları ek alan olamaz.
+- Ürün satırlarına (`kalemler`) da alan eklenebilir; satırla birlikte saklanır. Ancak fiş bütün olarak yazıldığından, **eski sürüm uygulama bir fişi düzenleyip kaydederse o fişin satırlarındaki yeni alanlar düşer.** Bu tür alanlar için iki uygulama da güncellendikten sonra kullanılmaya başlanmalıdır.
+
+**Uygulamalarda yapılacaklar** (her iki istemci de bugün bilmediği alanları yok sayar, yani alan eklemek eski sürümleri bozmaz):
+1. Yerel şemayı yükselt: masaüstünde `DB._senkron_kur` (`PRAGMA user_version`), telefonda `Veritabani` `onUpgrade`. Yeni sütunun değişikliği de kaydı "gönderilecek" yapmalıdır (masaüstündeki güncelleme tetikleyicisi).
+2. Gönderilen kayda alanı ekle (`bulut.py` `_kirlileri_topla`, `veritabani.dart` `kirlileriTopla`).
+3. Alınan kayıttan alanı oku (`bulut.py` `_uygula`, `veritabani.dart` `uygula`). Alan yoksa (eski sunucu ya da eski kayıt) boş kabul et.
+
+**Sunucunun da değişmesi gereken durumlar:** yeni tablo, arama ya da tekillik için dizin gereken alan (`fis_no` gibi), sunucunun hesapladığı ya da birleştirirken kullandığı alan, ya da bir temel alanın kurallarını değiştirmek. Bunlar için yeni bir göç yazılır ve `index.js`'te `dogrula()`, ilgili `INSERT … ON CONFLICT`, `degisenler()` ile `disaAktar()` güncellenir.
+
+**Yayına alma sırası:** önce sunucu (göç), sonra uygulamalar. Göç 001'den önceki bir sunucu yeni alanları sessizce atar.
+
+### Göç testleri (2026-11-18, yerel sunucu)
+
+| Test | Sonuç |
+|---|---|
+| Ek alanlar (`t_ek_alanlar`): saklama, eski sürümle düzenlemede korunma, `null` ile silme, son değişiklik kuralı, müşteri birleşmesi, geçersiz ad, uzunluk sınırı, ayrılmış adlar, yedek | 22/22 |
+| Göç 001'in **dolu** veritabanına uygulanması (eski kodla 71 müşteri, 224 işlem, 1500 gider yüklendi → göç → yeni kod) | Sürüm ve bütün kayıtlar birebir aynı |
+| Göçten önce eşitlenmiş cihaz göçten sonra eşitlendi | Yeniden yükleme yok; yalnızca yeni kaydı gönderdi |
+| Mevcut testler göçlü sunucuda: masaüstü eşitleme, masaüstü tarama, telefon | 28/28, 15/15, 6/6 |

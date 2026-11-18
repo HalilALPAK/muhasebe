@@ -60,7 +60,7 @@ def istek(url, anahtar, yol, govde=None, zaman_asimi=60):
     veri = json.dumps(govde, ensure_ascii=False).encode("utf-8") if govde is not None else None
     r = urllib.request.Request(url.rstrip("/") + yol, data=veri, method="POST" if veri else "GET", headers={
         "Authorization": f"Bearer {anahtar}", "Content-Type": "application/json; charset=utf-8",
-        "User-Agent": "OgulTarimMuhasebe/1"})
+        "User-Agent": "OgulTarimMuhasebe/1.0 (Windows)"})  # Cloudflare, Python-urllib kimliğini engelleyebilir
     global _SSL
     if _SSL is None:
         _SSL = _ssl_baglamlari()

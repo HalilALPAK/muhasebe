@@ -27,7 +27,11 @@ class EsitlemeSonucu {
 
 Future<Map<String, dynamic>> _istek(http.Client c, String url, String anahtar, String yol, [Map<String, Object?>? govde]) async {
   final adres = Uri.parse('${url.replaceAll(RegExp(r'/+$'), '')}$yol');
-  final basliklar = {'Authorization': 'Bearer $anahtar', 'Content-Type': 'application/json; charset=utf-8'};
+  final basliklar = {
+    'Authorization': 'Bearer $anahtar',
+    'Content-Type': 'application/json; charset=utf-8',
+    'User-Agent': 'OgulTarimMuhasebe/1.0 (Android)', // Cloudflare tarayıcı denetimi kimliksiz istemcileri engelleyebilir
+  };
   final http.Response y;
   try {
     y = await (govde == null ? c.get(adres, headers: basliklar) : c.post(adres, headers: basliklar, body: utf8.encode(jsonEncode(govde))))

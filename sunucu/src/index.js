@@ -9,6 +9,9 @@
  *   - Aynı isimle açılan iki müşteri birleşir (esleme tablosu).
  *   - Fiş numarası çakışırsa önce gelen korunur, sonraki sıradaki boş numarayı alır.
  *   - Silinmiş müşteriye daha sonra işlem girildiyse müşteri geri gelir (veri kaybolmaz).
+ *   - Tanınmayan (uygulamaya sonradan eklenen) alanlar atılmaz, kaydın "ek" sütununda saklanır
+ *     (goc/001_ek_alanlar.sql). Gelmeyen alan korunur, null gelen alan silinir. Böylece yeni
+ *     bir alan için sunucu değişmez ve eski sürüm uygulama yeni alanı boşaltamaz.
  */
 
 const API = 1;
@@ -55,6 +58,29 @@ const kimlik = (v) => {
   return v;
 };
 
+// ---------------------------------------------------------------- ek alanlar
+const EK_AD = /^[a-z][a-z0-9_]{0,39}$/;
+const EK_AYRILMIS = new Set(['uuid', 'guncelleme', 'silindi', 'surum', 'ek']);
+const EK_EN_FAZLA = 8000; // bir kaydın ek alanlarının JSON uzunluğu
+
+/** Kaydın bilinen alanlar dışındakileri { ad: değer } olarak döner (null = alanı sil). */
+function ekAyir(kayit, bilinen) {
+  const ek = {};
+  for (const [ad, deger] of Object.entries(kayit)) {
+    if (bilinen.includes(ad) || EK_AYRILMIS.has(ad)) continue;
+    if (!EK_AD.test(ad)) throw new GirdiHatasi(`geçersiz alan adı: ${ad}`);
+    if (typeof deger === 'number' && !Number.isFinite(deger)) throw new GirdiHatasi(`geçersiz değer: ${ad}`);
+    ek[ad] = deger;
+  }
+  if (JSON.stringify(ek).length > EK_EN_FAZLA) throw new GirdiHatasi('ek alanlar çok uzun');
+  return ek;
+}
+
+const MUSTERI_ALAN = ['ad', 'telefon', 'notlar'];
+const ISLEM_ALAN = ['musteri_uuid', 'tur', 'tarih', 'tutar', 'aciklama', 'fis_no', 'kalemler'];
+const KALEM_ALAN = ['urun', 'adet', 'birim_fiyat'];
+const GIDER_ALAN = ['tarih', 'kategori', 'tutar', 'aciklama'];
+
 function dogrula(g) {
   if (!g || typeof g !== 'object' || g.api !== API) {
     throw new GirdiHatasi('Uygulama ve sunucu sürümleri uyumsuz. Programı ve uygulamayı güncelleyin.');
@@ -62,19 +88,24 @@ function dogrula(g) {
   const d = g.degisiklikler || {};
   const musteri = (d.musteri || []).map((m) => ({
     uuid: kimlik(m.uuid), ad: metin(m.ad, 300).trim(), telefon: metin(m.telefon, 100), notlar: metin(m.notlar), guncelleme: zaman(m.guncelleme),
+    ek: ekAyir(m, MUSTERI_ALAN),
   }));
   if (musteri.some((m) => !m.ad)) throw new GirdiHatasi('adı boş müşteri');
   const islem = (d.islem || []).map((i) => {
     if (i.tur !== 'SATIŞ' && i.tur !== 'TAHSİLAT') throw new GirdiHatasi(`geçersiz işlem türü: ${i.tur}`);
     if (i.fis_no != null && (!Number.isInteger(i.fis_no) || i.fis_no < 0)) throw new GirdiHatasi(`geçersiz fiş no: ${i.fis_no}`);
-    const kalemler = (i.kalemler || []).map((k) => ({ urun: metin(k.urun, 300), adet: sayi(k.adet), birim_fiyat: sayi(k.birim_fiyat) }));
+    // kalemdeki yeni alanlar kalemle birlikte saklanır (fiş bütün olarak yazıldığı için ayrıca birleştirilmez)
+    const kalemler = (i.kalemler || []).map((k) => ({
+      ...ekAyir(k, KALEM_ALAN), urun: metin(k.urun, 300), adet: sayi(k.adet), birim_fiyat: sayi(k.birim_fiyat),
+    }));
     return {
       uuid: kimlik(i.uuid), musteri_uuid: kimlik(i.musteri_uuid), tur: i.tur, tarih: tarih(i.tarih), tutar: sayi(i.tutar),
-      aciklama: metin(i.aciklama), fis_no: i.fis_no ?? null, kalemler, guncelleme: zaman(i.guncelleme),
+      aciklama: metin(i.aciklama), fis_no: i.fis_no ?? null, kalemler, guncelleme: zaman(i.guncelleme), ek: ekAyir(i, ISLEM_ALAN),
     };
   });
   const gider = (d.gider || []).map((x) => ({
     uuid: kimlik(x.uuid), tarih: tarih(x.tarih), kategori: metin(x.kategori, 200), tutar: sayi(x.tutar), aciklama: metin(x.aciklama), guncelleme: zaman(x.guncelleme),
+    ek: ekAyir(x, GIDER_ALAN),
   }));
   const silinen = (d.silinen || []).map((s) => {
     if (!['musteri', 'islem', 'gider'].includes(s.tablo)) throw new GirdiHatasi(`geçersiz tablo: ${s.tablo}`);
@@ -89,6 +120,15 @@ function dogrula(g) {
 
 // ---------------------------------------------------------------- toplu SQL (az sorgu: D1 ücretsiz planda istek başına 50)
 const jsonSatir = (alanlar) => alanlar.map((a) => `json_extract(value, '$.${a}')`).join(', ');
+// ek alanlar olduğu gibi yazılır; var olan kayıtta json_patch ile eskilerin üstüne birleşir (null = alanı sil).
+// Yeni kayıttaki null değerler zararsızdır: cihaza giderken json_patch onları düşürür.
+const EK_YENI = "COALESCE(json_extract(value, '$.ek'), '{}')";
+/** Cihaza giden kayıt: temel alanlar + ek alanlar düz olarak (ek'te temel alan adı olamaz, bkz. ekAyir). */
+const disari = (tablo, alanlar) => `json_patch(json_object(${alanlar
+  .map((a) => `'${a}', ${a === 'kalemler' ? `json(${tablo}.kalemler)` : `${tablo}.${a}`}`).join(', ')}), ${tablo}.ek)`;
+const MUSTERI_DISARI = ['uuid', 'ad', 'telefon', 'notlar', 'guncelleme', 'silindi'];
+const ISLEM_DISARI = ['uuid', 'musteri_uuid', 'tur', 'tarih', 'tutar', 'aciklama', 'fis_no', 'kalemler', 'guncelleme', 'silindi'];
+const GIDER_DISARI = ['uuid', 'tarih', 'kategori', 'tutar', 'aciklama', 'guncelleme', 'silindi'];
 
 function silmeSorgulari(db, tablo, liste) {
   if (!liste.length) return [];
@@ -163,7 +203,7 @@ async function esitle(env, govde) {
     if (hedef) {
       esleme.set(m.uuid, hedef);
       yeniEsleme.push({ eski: m.uuid, yeni: hedef });
-      doldur.push({ uuid: hedef, telefon: m.telefon, notlar: m.notlar });
+      doldur.push({ uuid: hedef, telefon: m.telefon, notlar: m.notlar, ek: m.ek });
       rapor.birlesen_musteri++;
     } else {
       musteriYaz.push(m);
@@ -216,21 +256,25 @@ async function esitle(env, govde) {
     ...silmeSorgulari(db, 'gider', g.silinen.filter((s) => s.tablo === 'gider')),
   ];
   if (musteriYaz.length) {
-    yaz.push(db.prepare(`INSERT INTO musteri (uuid, ad, telefon, notlar, guncelleme, silindi)
-        SELECT ${jsonSatir(['uuid', 'ad', 'telefon', 'notlar', 'guncelleme'])}, 0 FROM json_each(?1) WHERE true
+    yaz.push(db.prepare(`INSERT INTO musteri (uuid, ad, telefon, notlar, guncelleme, ek, silindi)
+        SELECT ${jsonSatir(['uuid', 'ad', 'telefon', 'notlar', 'guncelleme'])}, ${EK_YENI}, 0 FROM json_each(?1) WHERE true
         ON CONFLICT(uuid) DO UPDATE SET ad = excluded.ad, telefon = excluded.telefon, notlar = excluded.notlar,
-          guncelleme = excluded.guncelleme, silindi = 0
+          guncelleme = excluded.guncelleme, ek = json_patch(musteri.ek, excluded.ek), silindi = 0
         WHERE excluded.guncelleme > musteri.guncelleme`).bind(JSON.stringify(musteriYaz)));
   }
   if (yeniEsleme.length) {
     yaz.push(db.prepare(`INSERT OR REPLACE INTO esleme (eski, yeni) SELECT ${jsonSatir(['eski', 'yeni'])} FROM json_each(?1)`)
       .bind(JSON.stringify(yeniEsleme)));
+    // birleşen müşterinin bilgileri kalan müşteride boş olan yerlere yazılır (kalanınki öncelikli)
     yaz.push(db.prepare(`UPDATE musteri SET
           telefon = CASE WHEN musteri.telefon = '' THEN t.tel ELSE musteri.telefon END,
           notlar = CASE WHEN musteri.notlar = '' THEN t.n ELSE musteri.notlar END,
+          ek = json_patch(json_patch('{}', t.ek), musteri.ek),
           guncelleme = musteri.guncelleme + 1
-        FROM (SELECT json_extract(value, '$.uuid') u, json_extract(value, '$.telefon') tel, json_extract(value, '$.notlar') n FROM json_each(?1)) t
-        WHERE musteri.uuid = t.u AND ((musteri.telefon = '' AND t.tel <> '') OR (musteri.notlar = '' AND t.n <> ''))`)
+        FROM (SELECT json_extract(value, '$.uuid') u, json_extract(value, '$.telefon') tel, json_extract(value, '$.notlar') n,
+                     json_extract(value, '$.ek') ek FROM json_each(?1)) t
+        WHERE musteri.uuid = t.u AND ((musteri.telefon = '' AND t.tel <> '') OR (musteri.notlar = '' AND t.n <> '')
+          OR json_patch(json_patch('{}', t.ek), musteri.ek) <> musteri.ek)`)
       .bind(JSON.stringify(doldur)));
   }
   if (canlandir.size) {
@@ -238,20 +282,20 @@ async function esitle(env, govde) {
       .bind(JSON.stringify([...canlandir])));
   }
   if (islemYaz.length) {
-    yaz.push(db.prepare(`INSERT INTO islem (uuid, musteri_uuid, tur, tarih, tutar, aciklama, fis_no, kalemler, guncelleme, silindi)
-        SELECT ${jsonSatir(['uuid', 'musteri_uuid', 'tur', 'tarih', 'tutar', 'aciklama', 'fis_no', 'kalemler', 'guncelleme'])}, 0
+    yaz.push(db.prepare(`INSERT INTO islem (uuid, musteri_uuid, tur, tarih, tutar, aciklama, fis_no, kalemler, guncelleme, ek, silindi)
+        SELECT ${jsonSatir(['uuid', 'musteri_uuid', 'tur', 'tarih', 'tutar', 'aciklama', 'fis_no', 'kalemler', 'guncelleme'])}, ${EK_YENI}, 0
         FROM json_each(?1) WHERE true
         ON CONFLICT(uuid) DO UPDATE SET musteri_uuid = excluded.musteri_uuid, tur = excluded.tur, tarih = excluded.tarih,
           tutar = excluded.tutar, aciklama = excluded.aciklama, fis_no = excluded.fis_no, kalemler = excluded.kalemler,
-          guncelleme = excluded.guncelleme, silindi = 0
+          guncelleme = excluded.guncelleme, ek = json_patch(islem.ek, excluded.ek), silindi = 0
         WHERE excluded.guncelleme > islem.guncelleme`).bind(JSON.stringify(islemYaz)));
   }
   yaz.push(...silmeSorgulari(db, 'musteri', g.silinen.filter((s) => s.tablo === 'musteri')));
   if (giderYaz.length) {
-    yaz.push(db.prepare(`INSERT INTO gider (uuid, tarih, kategori, tutar, aciklama, guncelleme, silindi)
-        SELECT ${jsonSatir(['uuid', 'tarih', 'kategori', 'tutar', 'aciklama', 'guncelleme'])}, 0 FROM json_each(?1) WHERE true
+    yaz.push(db.prepare(`INSERT INTO gider (uuid, tarih, kategori, tutar, aciklama, guncelleme, ek, silindi)
+        SELECT ${jsonSatir(['uuid', 'tarih', 'kategori', 'tutar', 'aciklama', 'guncelleme'])}, ${EK_YENI}, 0 FROM json_each(?1) WHERE true
         ON CONFLICT(uuid) DO UPDATE SET tarih = excluded.tarih, kategori = excluded.kategori, tutar = excluded.tutar,
-          aciklama = excluded.aciklama, guncelleme = excluded.guncelleme, silindi = 0
+          aciklama = excluded.aciklama, guncelleme = excluded.guncelleme, ek = json_patch(gider.ek, excluded.ek), silindi = 0
         WHERE excluded.guncelleme > gider.guncelleme`).bind(JSON.stringify(giderYaz)));
   }
   const gelen = g.musteri.length + g.islem.length + g.gider.length + g.silinen.length;
@@ -267,14 +311,11 @@ async function esitle(env, govde) {
 /** Cihazın son gördüğü sürümden sonra değişen kayıtlar (sayfa sayfa). */
 async function degisenler(db, sonSurum) {
   const r = await db.prepare(`
-    SELECT 'musteri' t, surum, json_object('uuid', uuid, 'ad', ad, 'telefon', telefon, 'notlar', notlar,
-           'guncelleme', guncelleme, 'silindi', silindi) j FROM musteri WHERE surum > ?1
+    SELECT 'musteri' t, surum, ${disari('musteri', MUSTERI_DISARI)} j FROM musteri WHERE surum > ?1
     UNION ALL
-    SELECT 'islem', surum, json_object('uuid', uuid, 'musteri_uuid', musteri_uuid, 'tur', tur, 'tarih', tarih, 'tutar', tutar,
-           'aciklama', aciklama, 'fis_no', fis_no, 'kalemler', json(kalemler), 'guncelleme', guncelleme, 'silindi', silindi) FROM islem WHERE surum > ?1
+    SELECT 'islem', surum, ${disari('islem', ISLEM_DISARI)} FROM islem WHERE surum > ?1
     UNION ALL
-    SELECT 'gider', surum, json_object('uuid', uuid, 'tarih', tarih, 'kategori', kategori, 'tutar', tutar, 'aciklama', aciklama,
-           'guncelleme', guncelleme, 'silindi', silindi) FROM gider WHERE surum > ?1
+    SELECT 'gider', surum, ${disari('gider', GIDER_DISARI)} FROM gider WHERE surum > ?1
     ORDER BY surum LIMIT ?2`).bind(sonSurum, SAYFA + 1).all();
   const satirlar = r.results.slice(0, SAYFA);
   const cevap = { musteri: [], islem: [], gider: [] };
@@ -285,7 +326,7 @@ async function degisenler(db, sonSurum) {
   const eksik = [...new Set(cevap.islem.map((i) => i.musteri_uuid))].filter((u) => !sayfadaki.has(u));
   const ekler = [db.prepare('SELECT eski, yeni FROM esleme')];
   if (eksik.length) {
-    ekler.push(db.prepare(`SELECT uuid, ad, telefon, notlar, guncelleme, silindi FROM musteri WHERE uuid IN (SELECT value FROM json_each(?1))`)
+    ekler.push(db.prepare(`SELECT ${disari('musteri', MUSTERI_DISARI)} j FROM musteri WHERE uuid IN (SELECT value FROM json_each(?1))`)
       .bind(JSON.stringify(eksik)));
   }
   const [eslemeR, bagliR] = await db.batch(ekler);
@@ -293,7 +334,7 @@ async function degisenler(db, sonSurum) {
     son_surum: satirlar.length ? satirlar[satirlar.length - 1].surum : sonSurum,
     daha_var: r.results.length > SAYFA,
     ...cevap,
-    bagli_musteri: bagliR ? bagliR.results : [],
+    bagli_musteri: bagliR ? bagliR.results.map((r) => JSON.parse(r.j)) : [],
     esleme: eslemeR.results,
   };
 }
@@ -315,16 +356,12 @@ async function durum(env) {
 /** Yedek: silinmemiş tüm kayıtlar. */
 async function disaAktar(env) {
   const [m, i, g] = await env.DB.batch([
-    env.DB.prepare('SELECT uuid, ad, telefon, notlar, guncelleme FROM musteri WHERE silindi = 0 ORDER BY ad'),
-    env.DB.prepare('SELECT uuid, musteri_uuid, tur, tarih, tutar, aciklama, fis_no, kalemler, guncelleme FROM islem WHERE silindi = 0 ORDER BY tarih, fis_no'),
-    env.DB.prepare('SELECT uuid, tarih, kategori, tutar, aciklama, guncelleme FROM gider WHERE silindi = 0 ORDER BY tarih'),
+    env.DB.prepare(`SELECT ${disari('musteri', MUSTERI_DISARI.slice(0, -1))} j FROM musteri WHERE silindi = 0 ORDER BY ad`),
+    env.DB.prepare(`SELECT ${disari('islem', ISLEM_DISARI.slice(0, -1))} j FROM islem WHERE silindi = 0 ORDER BY tarih, fis_no`),
+    env.DB.prepare(`SELECT ${disari('gider', GIDER_DISARI.slice(0, -1))} j FROM gider WHERE silindi = 0 ORDER BY tarih`),
   ]);
-  return {
-    olusturma: new Date().toISOString(),
-    musteri: m.results,
-    islem: i.results.map((x) => ({ ...x, kalemler: JSON.parse(x.kalemler) })),
-    gider: g.results,
-  };
+  const ac = (r) => r.results.map((x) => JSON.parse(x.j));
+  return { olusturma: new Date().toISOString(), musteri: ac(m), islem: ac(i), gider: ac(g) };
 }
 
 export default {
